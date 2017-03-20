@@ -1,0 +1,138 @@
+---
+title: "Multivariate Regression"
+author: "Brian Wright"
+date: "March 10, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Want to try to predict real estate cost throught the creation of confidence intervals
+```{r, echo=TRUE}
+library(fmsb)
+realestate <- data.frame(read.csv("RealEstate.csv",header = TRUE))
+hist(realestate$Price)
+head(realestate)
+str(realestate)
+shapiro.test(realestate$Price)
+#Actually doesn't really matter because it's our dependent variable, but good to know. Let's check out size
+shapiro.test(realestate$Size)
+#Can we also use skewness in the e1071 package, which is also a useful machine learning package
+library(e1071)
+skewness(realestate$Price)
+skewness(realestate$Size)
+hist(realestate$Size)
+x <- lm(Price~Size, realestate)
+summary(x)
+#This model stinks, so we need to try something else
+#We can try to modify the size variable but I don't think it will make much difference 
+scale.size <- scale(realestate$Size)
+#Scaling won't actually change the distibution, as we see below the shapiro test is consistant with what we saw above
+skewness(scale.size)
+shapiro.test(scale.size)
+#However log transformation will reduce the non-normality, but it's really not that bad so again I'm not sure this will help out model
+log.size <- log(realestate$Size)
+skewness(log.size)
+shapiro.test(log.size)
+#However, adding more variables will help to increase our prediction ability 
+x <- lm(Price~Size+Bathrooms+Bedrooms+Status, data = realestate)
+summary(x)
+#Note that the output coeficients are presented in the language of the dependent variable, for example if we were to scale price and re-run the estimates appear different. 
+scale.price <- scale(realestate$Price)
+xx <- lm(scale.price~scale.size+Bathrooms+Bedrooms+Status, data = realestate)
+summary(xx)
+#develop some prediction from our data to aid in assessing the quality
+predictions <- predict(x,realestate)
+head(predictions)
+#now we can create a output data.frame for our predictions
+lm_real_pred <- data.frame(predictions,realestate$Price)
+head(lm_real_pred)
+#We can use mean square error and root mean square error to assess the quality of our model, which is essentially the same as residual error only using the entire sample instead of the adjusting for degrees of freedom making it more sensitive to large errors in the model. 
+#Below we are subtracting our 
+library(dplyr)
+lm_real_pred <- mutate(lm_real_pred,realestate.Price-predictions)
+head(lm_real_pred)
+#change our column names for easy of use
+names(lm_real_pred) <- c("pred","price","error")
+head(lm_real_pred)
+#We could again use mutate in the dplyr library but just to reinforce the steps we'll create a separate data.from
+mse <- data.frame(mean((lm_real_pred$error)^2))
+#This MSE is essentially the variance of our error vector
+print(mse)
+#We take the square root to more or less get the standard deviation
+rmse_realestate <- sqrt(mse)
+print(rmse_realestate)
+#So our model still stinks and is most likely the result of needing more data or modifying our model approach to include adding the location factor, however it would most likely need to be modified for inclusion.
+library(fmsb)
+#Once we've created a model we can also assess the level to which our predictor variables are correlated, see below. 
+VIF(x)
+#Moderate, want this to be less than 2 and anything over 5 is pretty bad
+```
+Create confidence intervals from our model
+```{r, echo=TRUE}
+#Shows the overarching confidence intervals for the model, basically +- the error, but we can also predict the cost of a house through confidence intervals 
+confint(x)
+#First we need to create some parameters to use for our prediction
+newdata <- data.frame(Size=3000,Bathrooms=3,Bedrooms=5,Status="Regular")
+predict(x, newdata, interval="confidence")
+```
+
+ANNOVA to compare models
+
+```{r, echo=TRUE}
+#Checking to see if the reduction in Residual Square error is signicant 
+model1 <- lm(Price~Size+Bathrooms+Bedrooms+Status, data = realestate)
+model2 <- lm(Price~Size+Bedrooms+Status, data = realestate)
+model3 <- lm(Price~Size+Bedrooms*Bathrooms+Status, data = realestate)
+anova(model2, model1, test="Chisq")
+anova(model1, model3, test="Chisq")
+```
+
+
+
+You can also use the caret package which is a very robust R component design for comparing models and running maching learning algorythms 
+```{r}
+library(caret)
+Lm_model <- train(Sepal.Length~Sepal.Width + Petal.Length + Petal.Width, data=iris, method="lm")
+summary(Lm_model)
+```
+We can also use gradient decent to minimize the error of our linear equation to find the optimal coefficients to fit our model. 
+
+```{r, echo=TRUE, eval=FALSE}
+install.packages(sgd)
+library(sgd)
+scale.bathrooms <- scale(realestate$Bathrooms, center = TRUE, scale = TRUE)
+scale.bedrooms <- scale(realestate$Bedrooms, center = TRUE, scale = TRUE)
+graddect_realestate <- sgd(Price~scale.bathrooms+scale.bedrooms+scale.size+Status, data = realestate, model = "lm")
+graddect_realestate
+summary(graddect_realestate)
+```
+
+
+Below is the example from the package descripition, should you want to explore a bit more.  
+```{r, echo=TRUE}
+library(sgd)
+#set.seed is used to be able to generate the same random numbers to be able to repeat work in the future
+set.seed(42)
+#Creating Variables to be used for matrix parameters
+N <- 10000
+d <- 10
+#Creating a maxtrix with a normal distrubtion full of randomly generated numbers, 10 columns wide with 10000 rows
+X <- matrix(rnorm(N*d), ncol=d)
+fix(X)
+#Creating the variables 
+theta <- rep(5, d+1)
+eps <- rnorm(N)
+y <- cbind(1, X) %*% theta + eps
+#combine variables into a data frame
+dat <- data.frame(y=y, x=X)
+#Run gradient decent on the model, generates coeficients
+sgd.theta <- sgd(y ~ ., data=dat, model="lm")
+sgd.theta
+summary(sgd.theta)
+# Creates a formated output for mean squared error
+sprintf("Mean squared error: %0.3f", mean((theta - as.numeric(sgd.theta$coefficients))^2))
+
+```
+
