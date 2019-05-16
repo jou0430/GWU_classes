@@ -1,3 +1,3 @@
-# GWU_Classes
+## GWU_Classes
 GWU Classes
 
